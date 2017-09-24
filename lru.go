@@ -6,85 +6,97 @@ package lru
 
 import (
 	"container/list"
+	"time"
 )
-// Cache is an LRU cache. It is not safe for concurrent access.
-type Cache struct {
-	// MaxEntries is the maximum number of cache entries before
-	// an item is evicted. Zero means no limit.
-	MaxEntries int
 
-	// OnEvicted optionally specificies a callback function to be
+type Cache struct {
+	Expiry time.Duration
+	Size   int
+
+	// OnEvicted optionally specifies a callback function to be
 	// executed when an entry is purged from the cache.
-	OnEvicted func(key Key, value interface{})
+	OnEvicted func(key string, value interface{})
 
 	ll    *list.List
-	cache map[interface{}]*list.Element
+	cache map[string]*list.Element
 }
-
-// A Key may be any value that is comparable. See http://golang.org/ref/spec#Comparison_operators
-type Key interface{}
 
 type entry struct {
-	key   Key
-	value interface{}
+	key        string
+	value      interface{}
+	timeInsert int64
 }
 
-// New creates a new Cache.
-// If maxEntries is zero, the cache has no limit and it's assumed
-// that eviction is done by the caller.
-func New(maxEntries int) *Cache {
-	return &Cache{
-		MaxEntries: maxEntries,
-		ll:         list.New(),
-		cache:      make(map[interface{}]*list.Element),
+func New(size int, options ...func(*Cache)) *Cache {
+	c := &Cache{Size: size, cache: make(map[string]*list.Element), ll: list.New()}
+	for _, option := range options {
+		option(c)
+	}
+	return c
+}
+
+func WithExpiry(expiry time.Duration) func(c *Cache) {
+	return func(c *Cache) {
+		c.Expiry = expiry
 	}
 }
 
-// Add adds a value to the cache.
-func (c *Cache) Add(key Key, value interface{}) {
-	if c.cache == nil {
-		c.cache = make(map[interface{}]*list.Element)
-		c.ll = list.New()
+func WithEvictionCallback(onEvicted func(key string, value interface{})) func(c *Cache) {
+	return func(c *Cache) {
+		c.OnEvicted = onEvicted
+	}
+}
+
+func (c *Cache) Add(key string, value interface{}) {
+	var epochNow int64
+	if c.Expiry != time.Duration(0) {
+		epochNow = time.Now().UnixNano() / int64(time.Millisecond)
 	}
 	if ee, ok := c.cache[key]; ok {
 		c.ll.MoveToFront(ee)
 		ee.Value.(*entry).value = value
+		ee.Value.(*entry).timeInsert = epochNow
 		return
 	}
-	ele := c.ll.PushFront(&entry{key, value})
+	ele := c.ll.PushFront(&entry{key, value, epochNow})
 	c.cache[key] = ele
-	if c.MaxEntries != 0 && c.ll.Len() > c.MaxEntries {
+	if c.Size != 0 && c.ll.Len() > c.Size {
 		c.RemoveOldest()
-	}
-}
-
-// Get looks up a key's value from the cache.
-func (c *Cache) Get(key Key) (value interface{}, ok bool) {
-	if c.cache == nil {
-		return
-	}
-	if ele, hit := c.cache[key]; hit {
-		c.ll.MoveToFront(ele)
-		return ele.Value.(*entry).value, true
 	}
 	return
 }
 
-// Remove removes the provided key from the cache.
-func (c *Cache) Remove(key Key) {
-	if c.cache == nil {
-		return
+func (c *Cache) Get(key string) (value interface{}, ok bool) {
+	if ele, hit := c.cache[key]; hit {
+		if c.Expiry != time.Duration(0) {
+			unixNow := time.Now().UnixNano() / int64(time.Millisecond)
+			unixExpiry := int64(c.Expiry / time.Millisecond)
+			if (unixNow - ele.Value.(*entry).timeInsert) > unixExpiry {
+				c.removeElement(ele)
+				return nil, false
+			}
+		}
+		c.ll.MoveToFront(ele)
+		return ele.Value.(*entry).value, true
 	}
+	return nil, false
+}
+
+func (c *Cache) Remove(key string) {
 	if ele, hit := c.cache[key]; hit {
 		c.removeElement(ele)
 	}
 }
 
-// RemoveOldest removes the oldest item from the cache.
-func (c *Cache) RemoveOldest() {
-	if c.cache == nil {
+// Updates element's value without updating it's "Least-Recently-Used" status
+func (c *Cache) UpdateElement(key string, value interface{}) {
+	if ee, ok := c.cache[key]; ok {
+		ee.Value.(*entry).value = value
 		return
 	}
+}
+
+func (c *Cache) RemoveOldest() {
 	ele := c.ll.Back()
 	if ele != nil {
 		c.removeElement(ele)
@@ -102,20 +114,17 @@ func (c *Cache) removeElement(e *list.Element) {
 
 // Len returns the number of items in the cache.
 func (c *Cache) Len() int {
-	if c.cache == nil {
-		return 0
-	}
 	return c.ll.Len()
 }
 
 // Clear purges all stored items from the cache.
 func (c *Cache) Clear() {
-	if c.OnEvicted != nil {
-		for _, e := range c.cache {
-			kv := e.Value.(*entry)
+	for _, e := range c.cache {
+		kv := e.Value.(*entry)
+		if c.OnEvicted != nil {
 			c.OnEvicted(kv.key, kv.value)
 		}
+		delete(c.cache, kv.key)
 	}
-	c.ll = nil
-	c.cache = nil
+	c.ll.Init()
 }

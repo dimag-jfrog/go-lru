@@ -1,38 +1,24 @@
-package lru
+package lru_test
 
 import (
+	"github.com/dimag-jfrog/go-lru"
 	"testing"
 )
 
-type simpleStruct struct {
-	int
-	string
-}
-
-type complexStruct struct {
-	int
-	simpleStruct
-}
-
-var getTests = []struct {
-	name       string
-	keyToAdd   interface{}
-	keyToGet   interface{}
-	expectedOk bool
-}{
-	{"string_hit", "myKey", "myKey", true},
-	{"string_miss", "myKey", "nonsense", false},
-	{"simple_struct_hit", simpleStruct{1, "two"}, simpleStruct{1, "two"}, true},
-	{"simeple_struct_miss", simpleStruct{1, "two"}, simpleStruct{0, "noway"}, false},
-	{"complex_struct_hit", complexStruct{1, simpleStruct{2, "three"}},
-		complexStruct{1, simpleStruct{2, "three"}}, true},
-}
-
 func TestGet(t *testing.T) {
+	var getTests = []struct {
+		name       string
+		keyToAdd   string
+		keyToGet   string
+		expectedOk bool
+	}{
+		{"string_hit", "myKey", "myKey", true},
+		{"string_miss", "myKey", "nonsense", false},
+	}
 	for _, tt := range getTests {
-		lru := New(0)
-		lru.Add(tt.keyToAdd, 1234)
-		val, ok := lru.Get(tt.keyToGet)
+		c := lru.New(0)
+		c.Add(tt.keyToAdd, 1234)
+		val, ok := c.Get(tt.keyToGet)
 		if ok != tt.expectedOk {
 			t.Fatalf("%s: cache hit = %v; want %v", tt.name, ok, !ok)
 		} else if ok && val != 1234 {
@@ -41,17 +27,90 @@ func TestGet(t *testing.T) {
 	}
 }
 
+func TestEviction(t *testing.T) {
+	c := lru.New(3)
+	c.Add("e1", true)
+	c.Add("e2", true)
+	c.Add("e3", false)
+	c.Add("e4", false)
+
+	_, ok := c.Get("e1")
+	if ok {
+		t.Fatal("Did not expect to find element e1 in cache after adding e4")
+	}
+	_, ok = c.Get("e2")
+	if !ok {
+		t.Fatal("Expected to find element e2 in cache after adding e4")
+	}
+
+	c.Add("e5", true)
+	_, ok = c.Get("e2")
+	if !ok {
+		t.Fatal("Expected to find element e2 in cache after adding e5 because it was accessed recently")
+	}
+	_, ok = c.Get("e3")
+	if ok {
+		t.Fatal("Did not expect to find element e3 in cache after adding e5 since e2 was accessed before it")
+	}
+}
+
 func TestRemove(t *testing.T) {
-	lru := New(0)
-	lru.Add("myKey", 1234)
-	if val, ok := lru.Get("myKey"); !ok {
+	c := lru.New(0)
+	c.Add("myKey", 1234)
+	if val, ok := c.Get("myKey"); !ok {
 		t.Fatal("TestRemove returned no match")
 	} else if val != 1234 {
 		t.Fatalf("TestRemove failed.  Expected %d, got %v", 1234, val)
 	}
 
-	lru.Remove("myKey")
-	if _, ok := lru.Get("myKey"); ok {
+	c.Remove("myKey")
+	if _, ok := c.Get("myKey"); ok {
 		t.Fatal("TestRemove returned a removed entry")
+	}
+}
+
+func TestPurge(t *testing.T) {
+	lru.New(2)
+
+	c := lru.New(2)
+	l := c.Len()
+	if l != 0 {
+		t.Fatalf("Expected length to be 1 but got %d", l)
+	}
+	c.Add("e1", 1)
+	l = c.Len()
+	if l != 1 {
+		t.Fatalf("Expected length to be 1 but got %d", l)
+	}
+	c.Add("e2", 2)
+	l = c.Len()
+	if l != 2 {
+		t.Fatalf("Expected length to be 2 but got %d", l)
+	}
+	c.Add("e3", 3)
+	l = c.Len()
+	if l != 2 {
+		t.Fatalf("Expected length to be 2 but got %d", l)
+	}
+	if _, ok := c.Get("e1"); ok {
+		t.Fatal("Expected not to get value for e1 but it was not found")
+	}
+	if _, ok := c.Get("e2"); !ok {
+		t.Fatal("Expected to get value for e2 but it was not found")
+	}
+	if _, ok := c.Get("e3"); !ok {
+		t.Fatal("Expected to get value for e2 but it was not found")
+	}
+
+	c.Clear()
+	l = c.Len()
+	if _, ok := c.Get("e2"); ok {
+		t.Fatal("Expected not to get value for e2 but it was found")
+	}
+	if _, ok := c.Get("e3"); ok {
+		t.Fatal("Expected not to get value for e3 but it was found")
+	}
+	if l != 0 {
+		t.Fatalf("Expected length to be 0 after clearing cache, but got %d", l)
 	}
 }
