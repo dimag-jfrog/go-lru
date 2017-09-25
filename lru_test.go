@@ -120,13 +120,13 @@ func TestExpiry(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	c.Add("e3", 3)
 	if _, ok := c.Get("e1"); !ok {
-		t.Fatal("Expected to get value for e1 but it was found")
+		t.Fatal("Expected to get value for e1 but it was not found")
 	}
 	if _, ok := c.Get("e2"); !ok {
-		t.Fatal("Expected to get value for e2 but it was found")
+		t.Fatal("Expected to get value for e2 but it was not found")
 	}
 	if _, ok := c.Get("e3"); !ok {
-		t.Fatal("Expected to get value for e3 but it was found")
+		t.Fatal("Expected to get value for e3 but it was not found")
 	}
 	l := c.Len()
 	if l != 3 {
@@ -140,7 +140,7 @@ func TestExpiry(t *testing.T) {
 		t.Fatal("Expected not to get value for e3 but it was found")
 	}
 	if _, ok := c.Get("e3"); !ok {
-		t.Fatal("Expected to get value for e3 but it was found")
+		t.Fatal("Expected to get value for e3 but it was not found")
 	}
 	l = c.Len()
 	if l != 1 {
