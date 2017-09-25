@@ -1,7 +1,6 @@
-package lru_test
+package lru
 
 import (
-	"github.com/dimag-jfrog/go-lru"
 	"testing"
 )
 
@@ -16,7 +15,7 @@ func TestGet(t *testing.T) {
 		{"string_miss", "myKey", "nonsense", false},
 	}
 	for _, tt := range getTests {
-		c := lru.New(0)
+		c := New(0)
 		c.Add(tt.keyToAdd, 1234)
 		val, ok := c.Get(tt.keyToGet)
 		if ok != tt.expectedOk {
@@ -28,7 +27,7 @@ func TestGet(t *testing.T) {
 }
 
 func TestEviction(t *testing.T) {
-	c := lru.New(3)
+	c := New(3)
 	c.Add("e1", true)
 	c.Add("e2", true)
 	c.Add("e3", false)
@@ -55,7 +54,7 @@ func TestEviction(t *testing.T) {
 }
 
 func TestRemove(t *testing.T) {
-	c := lru.New(0)
+	c := New(0)
 	c.Add("myKey", 1234)
 	if val, ok := c.Get("myKey"); !ok {
 		t.Fatal("TestRemove returned no match")
@@ -70,9 +69,7 @@ func TestRemove(t *testing.T) {
 }
 
 func TestPurge(t *testing.T) {
-	lru.New(2)
-
-	c := lru.New(2)
+	c := New(2)
 	l := c.Len()
 	if l != 0 {
 		t.Fatalf("Expected length to be 1 but got %d", l)
