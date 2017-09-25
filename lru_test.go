@@ -2,6 +2,7 @@ package lru
 
 import (
 	"testing"
+	"time"
 )
 
 func TestGet(t *testing.T) {
@@ -109,5 +110,40 @@ func TestPurge(t *testing.T) {
 	}
 	if l != 0 {
 		t.Fatalf("Expected length to be 0 after clearing cache, but got %d", l)
+	}
+}
+
+func TestExpiry(t *testing.T) {
+	c := New(3, WithExpiry(100*time.Millisecond))
+	c.Add("e1", 1)
+	c.Add("e2", 2)
+	time.Sleep(50 * time.Millisecond)
+	c.Add("e3", 3)
+	if _, ok := c.Get("e1"); !ok {
+		t.Fatal("Expected to get value for e1 but it was found")
+	}
+	if _, ok := c.Get("e2"); !ok {
+		t.Fatal("Expected to get value for e2 but it was found")
+	}
+	if _, ok := c.Get("e3"); !ok {
+		t.Fatal("Expected to get value for e3 but it was found")
+	}
+	l := c.Len()
+	if l != 3 {
+		t.Fatalf("Expected length to be 3 but got %d", l)
+	}
+	time.Sleep(60 * time.Millisecond)
+	if _, ok := c.Get("e1"); ok {
+		t.Fatal("Expected not to get value for e2 but it was found")
+	}
+	if _, ok := c.Get("e2"); ok {
+		t.Fatal("Expected not to get value for e3 but it was found")
+	}
+	if _, ok := c.Get("e3"); !ok {
+		t.Fatal("Expected to get value for e3 but it was found")
+	}
+	l = c.Len()
+	if l != 1 {
+		t.Fatalf("Expected length to be 1 but got %d", l)
 	}
 }
